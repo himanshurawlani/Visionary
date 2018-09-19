@@ -97,6 +97,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private BorderedText borderedText;
     private HashSet<Classifier.Recognition> resultSet = new HashSet<>();
 
+    public boolean apiCallActive = false;
+
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
         final float textSizePx =
@@ -319,7 +321,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             }
 
             // Creating a background thread for face detection
-            if (objectCount.containsKey("person") && objectCount.get("person") > 0) {
+            if (objectCount.containsKey("person") && objectCount.get("person") > 0 && !apiCallActive
+                    && !tts.isSpeaking()) {
                 AsyncTask.execute(new Runnable() {
                     @Override
                     public void run() {
@@ -354,7 +357,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                                     false,        // returnFaceLandmarks
                                     new FaceServiceClient.FaceAttributeType[]{
                                             FaceServiceClient.FaceAttributeType.Age,
-                                            FaceServiceClient.FaceAttributeType.Gender} // return FaceAttributes:
+                                            FaceServiceClient.FaceAttributeType.Gender,
+                                            FaceServiceClient.FaceAttributeType.Emotion} // return FaceAttributes:
                             );
                             if (result == null) {
                                 LOGGER.d("MICROSOFT API: Detection Finished. Nothing detected");
@@ -374,6 +378,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                     @Override
                     protected void onPreExecute() {
                         LOGGER.d("MICROSOFT API: onPreExecute() Called!");
+                        apiCallActive = true;
                     }
 
                     @Override
@@ -388,14 +393,49 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                         }
                         if (result == null) return;
                         StringBuilder speak = new StringBuilder();
+                        int count = 1;
                         for (Face face : result) {
                             UUID id = face.faceId;
                             FaceAttribute fa = face.faceAttributes;
                             LOGGER.d("MICROSOFT API: ID: " + id + " FA: " + fa);
-                            speak.append("Person is ").append((int) fa.age).append(" years old, ").append(fa.gender).append(". ");
+                            speak.append("Person ").append(count++).append(" is ").append((int) fa.age)
+                                    .append(" years old, ").append(fa.gender).append(". ");
+                            LOGGER.d("MICROSOFT API: FA(Emotion): Anger=" + fa.emotion.anger +
+                                    " \nContempt=" + fa.emotion.contempt +
+                                    " \nDisgust=" + fa.emotion.disgust +
+                                    " \nFear=" + fa.emotion.fear +
+                                    " \nHappiness=" + fa.emotion.happiness +
+                                    " \nNeutral=" + fa.emotion.neutral +
+                                    " \nSadness=" + fa.emotion.sadness +
+                                    " \nSurprise" + fa.emotion.surprise);
+
+                            if (fa.gender.equals("male")) {
+                                speak.append("He looks ");
+                            } else {
+                                speak.append("She looks ");
+                            }
+
+                            if (fa.emotion.anger > 0) {
+                                speak.append("angry. ");
+                            } else if (fa.emotion.contempt > 0) {
+                                speak.append("contempt. ");
+                            } else if (fa.emotion.disgust > 0) {
+                                speak.append("disgusted. ");
+                            } else if (fa.emotion.fear > 0) {
+                                speak.append("scared. ");
+                            } else if (fa.emotion.surprise > 0) {
+                                speak.append("surprised. ");
+                            } else if (fa.emotion.neutral > 0) {
+                                speak.append("neutral. ");
+                            } else if (fa.emotion.sadness > 0) {
+                                speak.append("contempt. ");
+                            } else {
+                                speak.append("happy. ");
+                            }
                         }
                         LOGGER.d("MICROSOFT API SPEECH: " + speak);
                         tts.speak(speak.toString(), TextToSpeech.QUEUE_ADD, null);
+                        apiCallActive = false;
                     }
                 };
 
