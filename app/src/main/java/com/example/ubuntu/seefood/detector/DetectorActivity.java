@@ -386,6 +386,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 //                                    });
 //                }
 //            }));
+
             tts.speak(speak.toString(), TextToSpeech.QUEUE_FLUSH, null);
             LOGGER.d("SPEECH: " + speak.toString());
         }
