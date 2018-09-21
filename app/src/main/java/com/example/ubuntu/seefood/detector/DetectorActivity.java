@@ -18,6 +18,7 @@ package com.example.ubuntu.seefood.detector;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -30,6 +31,8 @@ import android.graphics.Paint.Style;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.media.ImageReader.OnImageAvailableListener;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -98,6 +101,138 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     private HashSet<Classifier.Recognition> resultSet = new HashSet<>();
 
     public boolean apiCallActive = false;
+
+    // TODO: Check what params are received in 'objects'
+    @SuppressLint("StaticFieldLeak")
+    AsyncTask<assistantParams, Void, Void> backgroundVoiceAssistant = new
+            AsyncTask<assistantParams, Void, Void>() {
+                @Override
+                protected Void doInBackground(assistantParams... object) {
+                    voiceAssistant(object[0].objectCount, object[0].croppedBitmap);
+                    return null;
+                }
+            };
+
+    @Override
+    protected void processImage() {
+        ++timestamp;
+        final long currTimestamp = timestamp;
+        byte[] originalLuminance = getLuminance();
+        tracker.onFrame(
+                previewWidth,
+                previewHeight,
+                getLuminanceStride(),
+                sensorOrientation,
+                originalLuminance,
+                timestamp);
+        trackingOverlay.postInvalidate();
+
+        // No mutex needed as this method is not reentrant.
+        if (computingDetection) {
+            readyForNextImage();
+            return;
+        }
+        computingDetection = true;
+        LOGGER.i("Preparing image " + currTimestamp + " for detection in bg thread.");
+
+        rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, previewWidth, previewHeight);
+
+        if (luminanceCopy == null) {
+            luminanceCopy = new byte[originalLuminance.length];
+        }
+        System.arraycopy(originalLuminance, 0, luminanceCopy, 0, originalLuminance.length);
+        readyForNextImage();
+
+        final Canvas canvas = new Canvas(croppedBitmap);
+        canvas.drawBitmap(rgbFrameBitmap, frameToCropTransform, null);
+        // For examining the actual TF input.
+        if (SAVE_PREVIEW_BITMAP) {
+            ImageUtils.saveBitmap(croppedBitmap);
+        }
+
+        runInBackground(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        LOGGER.i("Running detection on image " + currTimestamp);
+                        final long startTime = SystemClock.uptimeMillis();
+                        final List<Classifier.Recognition> results = detector.recognizeImage(croppedBitmap);
+                        lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
+
+                        cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
+                        final Canvas canvas = new Canvas(cropCopyBitmap);
+                        final Paint paint = new Paint();
+                        paint.setColor(Color.RED);
+                        paint.setStyle(Style.STROKE);
+                        paint.setStrokeWidth(2.0f);
+
+                        float minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
+                        switch (MODE) {
+                            case TF_OD_API:
+                                minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
+                                break;
+                        }
+
+                        final List<Classifier.Recognition> mappedRecognitions =
+                                new LinkedList<Classifier.Recognition>();
+
+                        final HashMap<String, Integer> objectCount = new HashMap<>();
+                        for (final Classifier.Recognition result : results) {
+                            final RectF location = result.getLocation();
+                            if (location != null && result.getConfidence() >= minimumConfidence) {
+
+                                // ResultSet is a hashset which stores all the recognitions while the camera is rolled on objects
+                                // This resultSet is passed to the DisplayResults activity
+                                // ResultSet stores objects of class Classifier.Recognition - which has many fields like id, name etc
+                                resultSet.add(result);
+                                LOGGER.d("Detection Result: " + result.toString());
+                                String className = result.getTitle();
+                                if (objectCount.containsKey(className)) {
+                                    objectCount.put(className, objectCount.get(className) + 1);
+                                } else {
+                                    objectCount.put(className, 1);
+                                }
+
+                                canvas.drawRect(location, paint);
+                                cropToFrameTransform.mapRect(location);
+                                result.setLocation(location);
+                                mappedRecognitions.add(result);
+                            }
+                        }
+
+                        LOGGER.d("AsyncTask.Status: " + backgroundVoiceAssistant.getStatus());
+                        // Creating a background thread for TextToSpeech
+                        if (!tts.isSpeaking() &&
+                                backgroundVoiceAssistant.getStatus() != AsyncTask.Status.RUNNING) {
+
+                            backgroundVoiceAssistant = new AsyncTask<assistantParams, Void, Void>() {
+                                @Override
+                                protected Void doInBackground(assistantParams... object) {
+                                    voiceAssistant(object[0].objectCount, object[0].croppedBitmap);
+                                    return null;
+                                }
+                            };
+                            backgroundVoiceAssistant.execute(
+                                    new assistantParams(objectCount, croppedBitmap));
+                        }
+
+//                        if (!tts.isSpeaking()) {
+//                            AsyncTask.execute(new Runnable() {
+//                                @Override
+//                                public void run() {
+//                                    voiceAssistant(objectCount, croppedBitmap);
+//                                }
+//                            });
+//                        }
+
+                        tracker.trackResults(mappedRecognitions, luminanceCopy, currTimestamp);
+                        trackingOverlay.postInvalidate();
+
+                        requestRender();
+                        computingDetection = false;
+                    }
+                });
+    }
 
     @Override
     public void onPreviewSizeChosen(final Size size, final int rotation) {
@@ -205,112 +340,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                 });
     }
 
-    @Override
-    protected void processImage() {
-        ++timestamp;
-        final long currTimestamp = timestamp;
-        byte[] originalLuminance = getLuminance();
-        tracker.onFrame(
-                previewWidth,
-                previewHeight,
-                getLuminanceStride(),
-                sensorOrientation,
-                originalLuminance,
-                timestamp);
-        trackingOverlay.postInvalidate();
-
-        // No mutex needed as this method is not reentrant.
-        if (computingDetection) {
-            readyForNextImage();
-            return;
-        }
-        computingDetection = true;
-        LOGGER.i("Preparing image " + currTimestamp + " for detection in bg thread.");
-
-        rgbFrameBitmap.setPixels(getRgbBytes(), 0, previewWidth, 0, 0, previewWidth, previewHeight);
-
-        if (luminanceCopy == null) {
-            luminanceCopy = new byte[originalLuminance.length];
-        }
-        System.arraycopy(originalLuminance, 0, luminanceCopy, 0, originalLuminance.length);
-        readyForNextImage();
-
-        final Canvas canvas = new Canvas(croppedBitmap);
-        canvas.drawBitmap(rgbFrameBitmap, frameToCropTransform, null);
-        // For examining the actual TF input.
-        if (SAVE_PREVIEW_BITMAP) {
-            ImageUtils.saveBitmap(croppedBitmap);
-        }
-
-        runInBackground(
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        LOGGER.i("Running detection on image " + currTimestamp);
-                        final long startTime = SystemClock.uptimeMillis();
-                        final List<Classifier.Recognition> results = detector.recognizeImage(croppedBitmap);
-                        lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
-
-                        cropCopyBitmap = Bitmap.createBitmap(croppedBitmap);
-                        final Canvas canvas = new Canvas(cropCopyBitmap);
-                        final Paint paint = new Paint();
-                        paint.setColor(Color.RED);
-                        paint.setStyle(Style.STROKE);
-                        paint.setStrokeWidth(2.0f);
-
-                        float minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
-                        switch (MODE) {
-                            case TF_OD_API:
-                                minimumConfidence = MINIMUM_CONFIDENCE_TF_OD_API;
-                                break;
-                        }
-
-                        final List<Classifier.Recognition> mappedRecognitions =
-                                new LinkedList<Classifier.Recognition>();
-
-                        final HashMap<String, Integer> objectCount = new HashMap<>();
-                        for (final Classifier.Recognition result : results) {
-                            final RectF location = result.getLocation();
-                            if (location != null && result.getConfidence() >= minimumConfidence) {
-
-                                // ResultSet is a hashset which stores all the recognitions while the camera is rolled on objects
-                                // This resultSet is passed to the DisplayResults activity
-                                // ResultSet stores objects of class Classifier.Recognition - which has many fields like id, name etc
-                                resultSet.add(result);
-                                LOGGER.d("Detection Result: " + result.toString());
-                                String className = result.getTitle();
-                                if (objectCount.containsKey(className)) {
-                                    objectCount.put(className, objectCount.get(className) + 1);
-                                } else {
-                                    objectCount.put(className, 1);
-                                }
-
-                                canvas.drawRect(location, paint);
-                                cropToFrameTransform.mapRect(location);
-                                result.setLocation(location);
-                                mappedRecognitions.add(result);
-                            }
-                        }
-
-                        // Creating a background thread for TextToSpeech
-                        if (!tts.isSpeaking()) {
-                            AsyncTask.execute(new Runnable() {
-                                @Override
-                                public void run() {
-                                    voiceAssistant(objectCount, croppedBitmap);
-                                }
-                            });
-                        }
-
-                        tracker.trackResults(mappedRecognitions, luminanceCopy, currTimestamp);
-                        trackingOverlay.postInvalidate();
-
-                        requestRender();
-                        computingDetection = false;
-                    }
-                });
-    }
-
     public void voiceAssistant(HashMap<String, Integer> objectCount, final Bitmap croppedBitmap) {
 
         StringBuilder speak = new StringBuilder();
@@ -322,7 +351,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
             // Creating a background thread for face detection
             if (objectCount.containsKey("person") && objectCount.get("person") > 0 && !apiCallActive
-                    && !tts.isSpeaking()) {
+                    && !tts.isSpeaking() && isOnline()) {
                 AsyncTask.execute(new Runnable() {
                     @Override
                     public void run() {
@@ -331,8 +360,51 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                     }
                 });
             }
+
+//            // ML kit OCR
+//            AsyncTask.execute((new Runnable() {
+//                @Override
+//                public void run() {
+//                    FirebaseVisionImage image = FirebaseVisionImage.fromBitmap(croppedBitmap);
+//                    FirebaseVisionTextRecognizer detector = FirebaseVision.getInstance()
+//                            .getOnDeviceTextRecognizer();
+//                    detector.processImage(image)
+//                            .addOnSuccessListener(
+//                                    new OnSuccessListener<FirebaseVisionText>() {
+//                                        @Override
+//                                        public void onSuccess(FirebaseVisionText texts) {
+//                                            processTextRecognitionResult(texts);
+//                                        }
+//                                    })
+//                            .addOnFailureListener(
+//                                    new OnFailureListener() {
+//                                        @Override
+//                                        public void onFailure(@NonNull Exception e) {
+//                                            // Task failed with an exception
+//                                            e.printStackTrace();
+//                                        }
+//                                    });
+//                }
+//            }));
             tts.speak(speak.toString(), TextToSpeech.QUEUE_FLUSH, null);
             LOGGER.d("SPEECH: " + speak.toString());
+        }
+    }
+
+    public boolean isOnline() {
+        ConnectivityManager cm =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo netInfo = cm.getActiveNetworkInfo();
+        return netInfo != null && netInfo.isConnectedOrConnecting();
+    }
+
+    public class assistantParams {
+        HashMap<String, Integer> objectCount;
+        Bitmap croppedBitmap;
+
+        assistantParams(HashMap<String, Integer> objectCount, Bitmap croppedBitmap) {
+            this.objectCount = objectCount;
+            this.croppedBitmap = croppedBitmap;
         }
     }
 
@@ -452,6 +524,24 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                 })
                 .create().show();
     }
+
+//    private void processTextRecognitionResult(FirebaseVisionText texts) {
+//        List<FirebaseVisionText.TextBlock> blocks = texts.getTextBlocks();
+//        if (blocks.size() == 0) {
+//            return;
+//        }
+//        StringBuilder speak = new StringBuilder();
+//        for (int i = 0; i < blocks.size(); i++) {
+//            List<FirebaseVisionText.Line> lines = blocks.get(i).getLines();
+//            for (int j = 0; j < lines.size(); j++) {
+//                List<FirebaseVisionText.Element> elements = lines.get(j).getElements();
+//                for (int k = 0; k < elements.size(); k++) {
+//                    speak.append(elements.get(k).getText()).append(" ");
+//                }
+//            }
+//        }
+//        LOGGER.d("MLKIT OCR: " + speak.toString());
+//    }
 
     @Override
     public synchronized void onPause() {

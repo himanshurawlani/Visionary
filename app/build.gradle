@@ -39,4 +39,8 @@ dependencies {
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
     implementation 'org.tensorflow:tensorflow-lite:0.0.0-nightly'
     implementation 'com.microsoft.projectoxford:face:1.4.3'
+
+    implementation 'com.google.firebase:firebase-core:16.0.3'
+    implementation 'com.google.firebase:firebase-ml-vision:17.0.0'
 }
+apply plugin: 'com.google.gms.google-services'
