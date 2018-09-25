@@ -472,7 +472,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                             FaceAttribute fa = face.faceAttributes;
                             LOGGER.d("MICROSOFT API: ID: " + id + " FA: " + fa);
                             speak.append("Person ").append(count++).append(" is ").append((int) fa.age)
-                                    .append(" years old, ").append(fa.gender).append(". ");
+                                    .append(" years old, ").append(fa.gender).append(", ");
                             LOGGER.d("MICROSOFT API: FA(Emotion): Anger=" + fa.emotion.anger +
                                     " \nContempt=" + fa.emotion.contempt +
                                     " \nDisgust=" + fa.emotion.disgust +
