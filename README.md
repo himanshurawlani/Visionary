@@ -31,6 +31,6 @@ You can download the .apk file in the releases section of this GitHub repository
 
 
 ### Screenshots
-![screenshot_1](https://user-images.githubusercontent.com/16475754/46054976-5e23d900-c167-11e8-858b-9711e711217a.png)
-![screenshot_2](https://user-images.githubusercontent.com/16475754/46054977-5e23d900-c167-11e8-8cf5-1ebb0ee41c20.png)
-![screenshot_3](https://user-images.githubusercontent.com/16475754/46054979-5ebc6f80-c167-11e8-8878-c4ac2a7ca106.png)
+<img src="https://user-images.githubusercontent.com/16475754/46054976-5e23d900-c167-11e8-858b-9711e711217a.png" width="360" height="640">
+<img src="https://user-images.githubusercontent.com/16475754/46054977-5e23d900-c167-11e8-8cf5-1ebb0ee41c20.png" width="360" height="640">
+<img src="https://user-images.githubusercontent.com/16475754/46054979-5ebc6f80-c167-11e8-8878-c4ac2a7ca106.png" width="360" height="640">
