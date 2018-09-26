@@ -1,4 +1,6 @@
 # Visionary android app
+- This uses computer vision to identify objects in their vicinity and inform the user using speech. It performs object detection, face detection, emotion recognition, etc. in real time.
+
 ### Core components:
 - TensorFlow Lite Object detection API
 - SSD_Mobilenet_V2_1.0_224 convolutional neural network
