@@ -12,6 +12,8 @@ import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -26,6 +28,7 @@ import android.view.KeyEvent;
 import android.view.Surface;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.Toast;
 
 import com.example.ubuntu.seefood.R;
 import com.example.ubuntu.seefood.env.ImageUtils;
@@ -97,6 +100,18 @@ public abstract class CameraActivity extends Activity implements ImageReader.OnI
         subscriptionKey = getString(R.string.subscription_key);
         faceServiceClient =
                 new FaceServiceRestClient(apiEndpoint, subscriptionKey);
+
+        if (!isOnline()) {
+            Toast.makeText(getApplicationContext(), "Internet connectivity required for " +
+                    "face detection", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    public boolean isOnline() {
+        ConnectivityManager cm =
+                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo netInfo = cm.getActiveNetworkInfo();
+        return netInfo != null && netInfo.isConnectedOrConnecting();
     }
 
     /******************** Code Related to Runtime Permissions **********************/

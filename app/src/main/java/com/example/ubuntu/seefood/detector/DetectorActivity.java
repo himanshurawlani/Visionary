@@ -18,7 +18,6 @@ package com.example.ubuntu.seefood.detector;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -31,8 +30,6 @@ import android.graphics.Paint.Style;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.media.ImageReader.OnImageAvailableListener;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -361,7 +358,8 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                 });
             }
 
-//            // ML kit OCR
+
+//            // Firebase ML kit text recognition
 //            AsyncTask.execute((new Runnable() {
 //                @Override
 //                public void run() {
@@ -390,13 +388,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             tts.speak(speak.toString(), TextToSpeech.QUEUE_FLUSH, null);
             LOGGER.d("SPEECH: " + speak.toString());
         }
-    }
-
-    public boolean isOnline() {
-        ConnectivityManager cm =
-                (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo netInfo = cm.getActiveNetworkInfo();
-        return netInfo != null && netInfo.isConnectedOrConnecting();
     }
 
     public class assistantParams {
